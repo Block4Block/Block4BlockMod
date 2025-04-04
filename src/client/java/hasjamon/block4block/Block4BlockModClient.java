@@ -10,9 +10,10 @@ import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 import org.yaml.snakeyaml.Yaml;
 
-import java.io.File;
-import java.io.FileReader;
-import java.io.IOException;
+import java.io.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.*;
 
 public class Block4BlockModClient implements ClientModInitializer {
@@ -30,9 +31,39 @@ public class Block4BlockModClient implements ClientModInitializer {
 	private static final String BLOCK_LISTS_FILE = "block_lists.yml";
 	private static final String CONFIG_FILE = "config.yml";
 
+	// Method to create default config.yml if it doesn't exist
+	private void createDefaultConfig() {
+		Path configPath = Path.of(FabricLoader.getInstance().getConfigDirectory().toString(), CONFIG_FILE);
+		if (Files.notExists(configPath)) {
+			try {
+				Files.writeString(configPath, CONFIG_FILE, StandardOpenOption.CREATE);
+				System.out.println("Default config.yml created.");
+			} catch (IOException e) {
+				System.err.println("Error creating default config.yml: " + e.getMessage());
+			}
+		}
+	}
+
+	// Method to create default block_lists.yml if it doesn't exist
+	private void createDefaultBlockLists() {
+		Path blockListsPath = Path.of(FabricLoader.getInstance().getConfigDirectory().toString(), BLOCK_LISTS_FILE);
+		if (Files.notExists(blockListsPath)) {
+			try {
+				Files.writeString(blockListsPath, BLOCK_LISTS_FILE, StandardOpenOption.CREATE);
+				System.out.println("Default block_lists.yml created.");
+			} catch (IOException e) {
+				System.err.println("Error creating default block_lists.yml: " + e.getMessage());
+			}
+		}
+	}
+
 	@Override
 	public void onInitializeClient() {
 		System.out.println("BlockStatus Client Mod Initializer loaded!");
+
+		// Create default config files if they don't exist
+		createDefaultConfig();
+		createDefaultBlockLists();
 
 		loadConfig();
 
@@ -58,50 +89,43 @@ public class Block4BlockModClient implements ClientModInitializer {
 	}
 
 	private void loadConfig() {
-		File configDir = FabricLoader.getInstance().getConfigDir().toFile();
-		if (!configDir.exists()) {
-			configDir.mkdirs(); // If the directory doesn't exist, create it
-		}
+        // Load block lists from resources
+        InputStream blockListsStream = getClass().getClassLoader().getResourceAsStream("block_lists.yml");
+        if (blockListsStream != null) {
+            loadBlockLists(blockListsStream);
+        } else {
+            System.err.println("Error: " + BLOCK_LISTS_FILE + " not found in resources.");
+        }
 
-		// Load block lists
-		File blockListsFile = new File(configDir, BLOCK_LISTS_FILE);
-		if (blockListsFile.exists()) {
-			loadBlockLists(blockListsFile);  // Call the loadBlockLists method properly
-		} else {
-			System.err.println("Error: " + BLOCK_LISTS_FILE + " not found.");
-			System.out.println("Config Directory: " + configDir.getAbsolutePath());
-		}
+        // Load other config file (config.yml) from resources
+        InputStream configStream = getClass().getClassLoader().getResourceAsStream(CONFIG_FILE);
+        if (configStream != null) {
+            loadConfigFile(configStream);
+        } else {
+            System.err.println("Error: " + CONFIG_FILE + " not found in resources.");
+        }
 
-		// Load other config file (config.yml) if necessary
-		File configFile = new File(configDir, CONFIG_FILE);
-		if (configFile.exists()) {
-			loadConfigFile(configFile);  // Load the config.yml
-		} else {
-			System.err.println("Error: " + CONFIG_FILE + " not found.");
-			System.out.println("Config Directory: " + configDir.getAbsolutePath());
-		}
+        // Determine "Block for Block" blocks (all remaining blocks)
+        for (Block block : Registries.BLOCK) {
+            if (!freeToBreakBlocks.contains(block) && !freeInClaimsBlocks.contains(block)) {
+                blockForBlockBlocks.add(block);
+            }
+        }
 
-		// Determine "Block for Block" blocks (all remaining blocks)
-		for (Block block : Registries.BLOCK) {
-			if (!freeToBreakBlocks.contains(block) && !freeInClaimsBlocks.contains(block)) {
-				blockForBlockBlocks.add(block);
-			}
-		}
+        System.out.println("Free in claims blocks loaded:");
+        freeInClaimsBlocks.forEach(b -> System.out.println(" - " + Registries.BLOCK.getId(b)));
 
-		System.out.println("Free in claims blocks loaded:");
-		freeInClaimsBlocks.forEach(b -> System.out.println(" - " + Registries.BLOCK.getId(b)));
+        System.out.println("Free to break blocks loaded:");
+        freeToBreakBlocks.forEach(b -> System.out.println(" - " + Registries.BLOCK.getId(b)));
 
-		System.out.println("Free to break blocks loaded:");
-		freeToBreakBlocks.forEach(b -> System.out.println(" - " + Registries.BLOCK.getId(b)));
+        System.out.println("BlockStatus: Loaded " + blockForBlockBlocks.size() + " Block for Block blocks, " +
+                freeToBreakBlocks.size() + " free to break blocks, " +
+                freeInClaimsBlocks.size() + " free in claims blocks");
+    }
 
-		System.out.println("BlockStatus: Loaded " + blockForBlockBlocks.size() + " Block for Block blocks, " +
-				freeToBreakBlocks.size() + " free to break blocks, " +
-				freeInClaimsBlocks.size() + " free in claims blocks");
-	}
-
-	private void loadConfigFile(File configFile) {
+	private void loadConfigFile(InputStream configStream) {
 		Yaml yaml = new Yaml();
-		try (FileReader reader = new FileReader(configFile)) {
+		try (InputStreamReader reader = new InputStreamReader(configStream)) {
 			// Load the config.yml file
 			Map<String, Object> config = yaml.load(reader);
 
@@ -128,14 +152,14 @@ public class Block4BlockModClient implements ClientModInitializer {
 				System.err.println("Error: config.yml is empty or not correctly formatted.");
 			}
 		} catch (IOException e) {
-			System.err.println("Error loading config.yml: " + e.getMessage());
+			System.err.println("Error loading config.yml from resources: " + e.getMessage());
 			e.printStackTrace();
 		}
 	}
 
-	private void loadBlockLists(File blockListsFile) {
+	private void loadBlockLists(InputStream blockListsStream) {
 		Yaml yaml = new Yaml();
-		try (FileReader reader = new FileReader(blockListsFile)) {
+		try (InputStreamReader reader = new InputStreamReader(blockListsStream)) {
 			Map<String, Object> lists = yaml.load(reader);
 
 			// Clear previous sets
@@ -151,7 +175,7 @@ public class Block4BlockModClient implements ClientModInitializer {
 			loadBlockListFromIds(breakBlocks, freeToBreakBlocks);
 
 		} catch (IOException e) {
-			System.err.println("Error loading BlockStatus block lists: " + e.getMessage());
+			System.err.println("Error loading BlockStatus block lists from resources: " + e.getMessage());
 			e.printStackTrace();
 		}
 	}
