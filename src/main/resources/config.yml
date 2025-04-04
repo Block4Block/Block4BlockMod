@@ -1,0 +1,6 @@
+display:
+  useAdvancedTooltip: true
+  useLore: false
+  blockForBlockText: §cBlock for Block
+  freeToBreakText: §aFree to Break
+  freeInClaimsText: §bFree in Claims

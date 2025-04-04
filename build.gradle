@@ -1,3 +1,14 @@
+import org.yaml.snakeyaml.DumperOptions
+
+buildscript {
+	repositories {
+		mavenCentral()
+	}
+	dependencies {
+		classpath 'org.yaml:snakeyaml:2.4'
+	}
+}
+
 plugins {
 	id 'fabric-loom' version '1.10-SNAPSHOT'
 	id 'maven-publish'
@@ -11,11 +22,7 @@ base {
 }
 
 repositories {
-	// Add repositories to retrieve artifacts from in here.
-	// You should only use this when depending on other mods because
-	// Loom adds the essential maven repositories to download Minecraft and libraries from automatically.
-	// See https://docs.gradle.org/current/userguide/declaring_repositories.html
-	// for more information about repositories.
+	mavenCentral()
 }
 
 loom {
@@ -28,10 +35,18 @@ loom {
 		}
 	}
 
+	// Run configurations
+	runs {
+		client {
+			runDir = "run"
+		}
+		server {
+			runDir = "run"
+		}
+	}
 }
 
 dependencies {
-	// To change the versions see the gradle.properties file
 	minecraft "com.mojang:minecraft:${project.minecraft_version}"
 	mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
 	modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
@@ -39,6 +54,9 @@ dependencies {
 	// Fabric API. This is technically optional, but you probably want it anyway.
 	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
+	// Include SnakeYAML as a runtime dependency
+	include 'org.yaml:snakeyaml:2.4'
+	implementation 'org.yaml:snakeyaml:2.4'
 }
 
 processResources {
@@ -51,12 +69,11 @@ processResources {
 
 tasks.withType(JavaCompile).configureEach {
 	it.options.release = 21
+	it.options.compilerArgs += ["-Xlint:unchecked"]
 }
 
 java {
-	// Loom will automatically attach sourcesJar to a RemapSourcesJar task and to the "build" task
-	// if it is present.
-	// If you remove this line, sources will not be generated.
+	// Configure the sources JAR
 	withSourcesJar()
 
 	sourceCompatibility = JavaVersion.VERSION_21
@@ -67,24 +84,129 @@ jar {
 	inputs.property "archivesName", project.base.archivesName
 
 	from("LICENSE") {
-		rename { "${it}_${inputs.properties.archivesName}"}
+		rename { "${it}_${inputs.properties.archivesName}" }
 	}
 }
 
-// configure the maven publication
-publishing {
-	publications {
-		create("mavenJava", MavenPublication) {
-			artifactId = project.archives_base_name
-			from components.java
-		}
-	}
+// --- Custom Task to create run/config files ---
+task generateRunConfigs {
+	// Create run config directory
+	def runConfigDir = file('run/config')
+	def runBlockListsFile = file('run/config/block_lists.yml')
+	def runConfigFile = file('run/config/config.yml')
 
-	// See https://docs.gradle.org/current/userguide/publishing_maven.html for information on how to set up publishing.
-	repositories {
-		// Add repositories to publish to here.
-		// Notice: This block does NOT have the same function as the block in the top level.
-		// The repositories here will be used for publishing your artifact, not for
-		// retrieving dependencies.
+	outputs.files(runBlockListsFile, runConfigFile)
+
+	doLast {
+		println "Generating config files in run/config directory..."
+
+		// Ensure run/config directory exists
+		runConfigDir.mkdirs()
+
+		// Create dumper options for cleaner YAML output
+		def options = new DumperOptions()
+		options.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK)
+		options.setPrettyFlow(true)
+		def yamlDumper = new org.yaml.snakeyaml.Yaml(options)
+
+		// Step 1: Create block_lists.yml with empty lists
+		def blockLists = [
+				'blacklisted-claim-blocks': [],
+				'blacklisted-blocks': []
+		]
+
+		// Write to run/config directory
+		runBlockListsFile.withWriter('UTF-8') { writer ->
+			yamlDumper.dump(blockLists, writer)
+		}
+		println "Generated block_lists.yml in run/config directory"
+
+		// Step 2: Create config.yml with display settings
+		def config = [
+				'display': [
+						'useAdvancedTooltip': true,
+						'useLore': false,
+						'blockForBlockText': "§cBlock for Block",
+						'freeToBreakText': "§aFree to Break",
+						'freeInClaimsText': "§bFree in Claims"
+				]
+		]
+
+		// Write to run/config directory
+		runConfigFile.withWriter('UTF-8') { writer ->
+			yamlDumper.dump(config, writer)
+		}
+		println "Generated config.yml in run/config directory"
 	}
+}
+
+// --- Task to create source resource files ---
+task generateResourceFiles {
+	def configDir = file('src/main/resources')
+	def blockListsFile = file('src/main/resources/block_lists.yml')
+	def configFile = file('src/main/resources/config.yml')
+
+	outputs.files(blockListsFile, configFile)
+
+	doLast {
+		println "Generating config files in resources directory..."
+
+		// Ensure resources directory exists
+		configDir.mkdirs()
+
+		// Create dumper options for cleaner YAML output
+		def options = new DumperOptions()
+		options.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK)
+		options.setPrettyFlow(true)
+		def yamlDumper = new org.yaml.snakeyaml.Yaml(options)
+
+		// Step 1: Create block_lists.yml with empty lists
+		def blockLists = [
+				'blacklisted-claim-blocks': [],
+				'blacklisted-blocks': []
+		]
+
+		// Write to resources directory
+		blockListsFile.withWriter('UTF-8') { writer ->
+			yamlDumper.dump(blockLists, writer)
+		}
+		println "Generated block_lists.yml in resources directory"
+
+		// Step 2: Create config.yml with display settings
+		def config = [
+				'display': [
+						'useAdvancedTooltip': true,
+						'useLore': false,
+						'blockForBlockText': "§cBlock for Block",
+						'freeToBreakText': "§aFree to Break",
+						'freeInClaimsText': "§bFree in Claims"
+				]
+		]
+
+		// Write to resources directory
+		configFile.withWriter('UTF-8') { writer ->
+			yamlDumper.dump(config, writer)
+		}
+		println "Generated config.yml in resources directory"
+	}
+}
+
+// Make sure resource files are generated before processing resources
+processResources.dependsOn generateResourceFiles
+
+// Make sure the run configs are generated before running the client
+tasks.named("runClient").configure {
+	dependsOn(generateRunConfigs)
+}
+
+// Fix the sourcesJar task to work properly with generated resources
+tasks.named("sourcesJar").configure {
+	dependsOn(generateResourceFiles)
+
+	// Set duplicate handling strategy
+	duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+
+	// Only include Java source files, not resources
+	from(sourceSets.main.allJava)
+	from(sourceSets.client.allJava)
 }
