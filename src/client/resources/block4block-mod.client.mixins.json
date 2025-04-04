@@ -1,0 +1,11 @@
+{
+	"required": true,
+	"package": "hasjamon.block4block.mixin.client",
+	"compatibilityLevel": "JAVA_21",
+	"client": [
+		"Block4BlockClientMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}

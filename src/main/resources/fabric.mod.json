@@ -1,0 +1,41 @@
+{
+	"schemaVersion": 1,
+	"id": "block4block-mod",
+	"version": "${version}",
+	"name": "Block4Block Mod",
+	"description": "Shows block breaking status (free to break, free in claims) in tooltips.",
+	"authors": [
+		"HasJamOn", "Bahm"
+	],
+	"contact": {
+		"homepage": "https://www.b4block.org/",
+		"sources": "https://github.com/Block4Block/Block4Block-mod"
+	},
+	"license": "Open Works NAP License",
+	"icon": "assets/block4block-mod/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"hasjamon.block4block.Block4BlockMod"
+		],
+		"client": [
+			"hasjamon.block4block.Block4BlockModClient"
+		]
+	},
+	"mixins": [
+		"block4block-mod.mixins.json",
+		{
+			"config": "block4block-mod.client.mixins.json",
+			"environment": "client"
+		}
+	],
+	"depends": {
+		"fabricloader": ">=0.16.10",
+		"minecraft": "~1.21.5",
+		"java": ">=21",
+		"fabric-api": "*"
+	},
+	"suggests": {
+		"another-mod": "*"
+	}
+}
