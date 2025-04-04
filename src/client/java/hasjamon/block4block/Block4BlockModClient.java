@@ -4,6 +4,7 @@ import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.item.v1.ItemTooltipCallback;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.block.Block;
+import net.minecraft.item.BlockItem;
 import net.minecraft.item.Item;
 import net.minecraft.registry.Registries;
 import net.minecraft.text.Text;
@@ -17,9 +18,11 @@ import java.nio.file.StandardOpenOption;
 import java.util.*;
 
 public class Block4BlockModClient implements ClientModInitializer {
+	// We'll keep the BlockForBlock set as actual Block instances
 	private final Set<Block> blockForBlockBlocks = new HashSet<>();
-	private final Set<Block> freeToBreakBlocks = new HashSet<>();
-	private final Set<Block> freeInClaimsBlocks = new HashSet<>();
+	// Instead of storing exception blocks as Block instances, we store their registry IDs.
+	private final Set<Identifier> freeToBreakIds = new HashSet<>();
+	private final Set<Identifier> freeInClaimsIds = new HashSet<>();
 
 	private boolean useAdvancedTooltip = true;
 	private boolean useLore = false;
@@ -31,7 +34,7 @@ public class Block4BlockModClient implements ClientModInitializer {
 	private static final String BLOCK_LISTS_FILE = "block_lists.yml";
 	private static final String CONFIG_FILE = "config.yml";
 
-	// Method to create default config.yml if it doesn't exist
+	// Create default config.yml if it doesn't exist
 	private void createDefaultConfig() {
 		Path configPath = Path.of(FabricLoader.getInstance().getConfigDirectory().toString(), CONFIG_FILE);
 		if (Files.notExists(configPath)) {
@@ -44,7 +47,7 @@ public class Block4BlockModClient implements ClientModInitializer {
 		}
 	}
 
-	// Method to create default block_lists.yml if it doesn't exist
+	// Create default block_lists.yml if it doesn't exist
 	private void createDefaultBlockLists() {
 		Path blockListsPath = Path.of(FabricLoader.getInstance().getConfigDirectory().toString(), BLOCK_LISTS_FILE);
 		if (Files.notExists(blockListsPath)) {
@@ -67,19 +70,21 @@ public class Block4BlockModClient implements ClientModInitializer {
 
 		loadConfig();
 
+		// Register tooltip callback. Only process items that are BlockItems.
 		ItemTooltipCallback.EVENT.register((itemStack, tooltipContext, tooltipType, list) -> {
 			Item item = itemStack.getItem();
-			if (item == null) return;
+			if (!(item instanceof BlockItem)) {
+				return;
+			}
+			Block block = ((BlockItem) item).getBlock();
+			Identifier id = Registries.BLOCK.getId(block);
 
-			Block block = Block.getBlockFromItem(item);
-			if (block == null) return;
-
-			if (blockForBlockBlocks.contains(block)) {
-				addTooltip(list, blockForBlockText);
-			} else if (freeToBreakBlocks.contains(block)) {
+			if (freeToBreakIds.contains(id)) {
 				addTooltip(list, freeToBreakText);
-			} else if (freeInClaimsBlocks.contains(block)) {
+			} else if (freeInClaimsIds.contains(id)) {
 				addTooltip(list, freeInClaimsText);
+			} else if (blockForBlockBlocks.contains(block)) {
+				addTooltip(list, blockForBlockText);
 			}
 		});
 	}
@@ -89,39 +94,45 @@ public class Block4BlockModClient implements ClientModInitializer {
 	}
 
 	private void loadConfig() {
-        // Load block lists from resources
-        InputStream blockListsStream = getClass().getClassLoader().getResourceAsStream("block_lists.yml");
-        if (blockListsStream != null) {
-            loadBlockLists(blockListsStream);
-        } else {
-            System.err.println("Error: " + BLOCK_LISTS_FILE + " not found in resources.");
-        }
+		// Load block lists from resources
+		InputStream blockListsStream = getClass().getClassLoader().getResourceAsStream(BLOCK_LISTS_FILE);
+		if (blockListsStream != null) {
+			loadBlockLists(blockListsStream);
+		} else {
+			System.err.println("Error: " + BLOCK_LISTS_FILE + " not found in resources.");
+		}
 
-        // Load other config file (config.yml) from resources
-        InputStream configStream = getClass().getClassLoader().getResourceAsStream(CONFIG_FILE);
-        if (configStream != null) {
-            loadConfigFile(configStream);
-        } else {
-            System.err.println("Error: " + CONFIG_FILE + " not found in resources.");
-        }
+		// Load other config file (config.yml) from resources
+		InputStream configStream = getClass().getClassLoader().getResourceAsStream(CONFIG_FILE);
+		if (configStream != null) {
+			loadConfigFile(configStream);
+		} else {
+			System.err.println("Error: " + CONFIG_FILE + " not found in resources.");
+		}
 
-        // Determine "Block for Block" blocks (all remaining blocks)
-        for (Block block : Registries.BLOCK) {
-            if (!freeToBreakBlocks.contains(block) && !freeInClaimsBlocks.contains(block)) {
-                blockForBlockBlocks.add(block);
-            }
-        }
+		// Populate the "Block for Block" set with all placeable blocks
+		// that are not explicitly marked as exceptions.
+		for (Block block : Registries.BLOCK) {
+			// Only consider blocks that are placeable.
+			if (!(block.asItem() instanceof BlockItem)) {
+				continue;
+			}
+			Identifier id = Registries.BLOCK.getId(block);
+			if (!freeToBreakIds.contains(id) && !freeInClaimsIds.contains(id)) {
+				blockForBlockBlocks.add(block);
+			}
+		}
 
-        System.out.println("Free in claims blocks loaded:");
-        freeInClaimsBlocks.forEach(b -> System.out.println(" - " + Registries.BLOCK.getId(b)));
+		System.out.println("Free in claims blocks loaded:");
+		freeInClaimsIds.forEach(id -> System.out.println(" - " + id));
 
-        System.out.println("Free to break blocks loaded:");
-        freeToBreakBlocks.forEach(b -> System.out.println(" - " + Registries.BLOCK.getId(b)));
+		System.out.println("Free to break blocks loaded:");
+		freeToBreakIds.forEach(id -> System.out.println(" - " + id));
 
-        System.out.println("BlockStatus: Loaded " + blockForBlockBlocks.size() + " Block for Block blocks, " +
-                freeToBreakBlocks.size() + " free to break blocks, " +
-                freeInClaimsBlocks.size() + " free in claims blocks");
-    }
+		System.out.println("BlockStatus: Loaded " + blockForBlockBlocks.size() + " Block for Block blocks, " +
+				freeToBreakIds.size() + " free to break blocks, " +
+				freeInClaimsIds.size() + " free in claims blocks");
+	}
 
 	private void loadConfigFile(InputStream configStream) {
 		Yaml yaml = new Yaml();
@@ -141,7 +152,7 @@ public class Block4BlockModClient implements ClientModInitializer {
 					freeInClaimsText = (String) display.getOrDefault("freeInClaimsText", "§bFree in Claims");
 				}
 
-				// Print loaded values (for debugging purposes)
+				// Debug output for loaded values
 				System.out.println("Config loaded:");
 				System.out.println(" - useAdvancedTooltip: " + useAdvancedTooltip);
 				System.out.println(" - useLore: " + useLore);
@@ -163,16 +174,16 @@ public class Block4BlockModClient implements ClientModInitializer {
 			Map<String, Object> lists = yaml.load(reader);
 
 			// Clear previous sets
-			freeInClaimsBlocks.clear();
-			freeToBreakBlocks.clear();
+			freeInClaimsIds.clear();
+			freeToBreakIds.clear();
 			blockForBlockBlocks.clear();
 
-			// Load blocks into respective sets
+			// Load block IDs from config for both free in claims and free to break
 			List<String> claimBlocks = getListFromConfig(lists, "blacklisted-claim-blocks");
 			List<String> breakBlocks = getListFromConfig(lists, "blacklisted-blocks");
 
-			loadBlockListFromIds(claimBlocks, freeInClaimsBlocks);
-			loadBlockListFromIds(breakBlocks, freeToBreakBlocks);
+			loadBlockListFromIds(claimBlocks, freeInClaimsIds);
+			loadBlockListFromIds(breakBlocks, freeToBreakIds);
 
 		} catch (IOException e) {
 			System.err.println("Error loading BlockStatus block lists from resources: " + e.getMessage());
@@ -180,7 +191,11 @@ public class Block4BlockModClient implements ClientModInitializer {
 		}
 	}
 
-	private void loadBlockListFromIds(List<String> blockIds, Set<Block> blockSet) {
+	/**
+	 * Loads a list of block IDs (as Strings) into the provided set.
+	 * Only adds the block if it exists in the registry and is placeable.
+	 */
+	private void loadBlockListFromIds(List<String> blockIds, Set<Identifier> idSet) {
 		for (String blockId : blockIds) {
 			try {
 				Identifier id = Identifier.tryParse(blockId);
@@ -188,13 +203,12 @@ public class Block4BlockModClient implements ClientModInitializer {
 					System.err.println("BlockStatus: Invalid block ID format: " + blockId);
 					continue;
 				}
-
 				Block block = Registries.BLOCK.get(id);
-				if (block != null) {
-					blockSet.add(block);
+				if (block != null && (block.asItem() instanceof BlockItem)) {
+					idSet.add(id);
 					System.out.println("BlockStatus: Successfully added block: " + id);
 				} else {
-					System.err.println("BlockStatus: Unknown block ID: " + blockId);
+					System.out.println("BlockStatus: Block " + id + " is either unknown or not placeable and will not be added.");
 				}
 			} catch (Exception e) {
 				System.err.println("BlockStatus: Error processing block ID: " + blockId);
@@ -205,7 +219,6 @@ public class Block4BlockModClient implements ClientModInitializer {
 
 	private List<String> getListFromConfig(Map<String, Object> config, String key) {
 		List<String> result = new ArrayList<>();
-
 		if (config.containsKey(key)) {
 			Object obj = config.get(key);
 			if (obj instanceof List<?>) {
@@ -222,7 +235,6 @@ public class Block4BlockModClient implements ClientModInitializer {
 		} else {
 			System.err.println("BlockStatus: Key " + key + " not found in config.");
 		}
-
 		return result;
 	}
 }
