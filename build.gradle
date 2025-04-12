@@ -1,5 +1,3 @@
-import org.yaml.snakeyaml.DumperOptions
-
 buildscript {
 	repositories {
 		mavenCentral()
@@ -10,6 +8,7 @@ buildscript {
 }
 
 plugins {
+	id 'java'
 	id 'fabric-loom' version '1.10-SNAPSHOT'
 	id 'maven-publish'
 }
@@ -51,9 +50,10 @@ dependencies {
 	minecraft "com.mojang:minecraft:${project.minecraft_version}"
 	mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
 	modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
-// Fabric API. This is technically optional, but you probably want it anyway.
+	// Fabric API. This is technically optional, but you probably want it anyway.
 	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
-	implementation 'org.yaml:snakeyaml:2.4'
+	modImplementation 'org.yaml:snakeyaml:2.4'
+	include "org.yaml:snakeyaml:2.4"
 }
 
 processResources {
@@ -67,6 +67,10 @@ processResources {
 
 	filesMatching("fabric.mod.json") {
 		expand "version": inputs.properties.version
+	}
+	from('src/client/resources') {
+		include 'block4block-mod.client.mixins.json'
+		into 'resources' // Copy to the resources directory in the JAR
 	}
 }
 
@@ -86,6 +90,9 @@ jar {
 	from("LICENSE") {
 		rename { "${it}_${inputs.properties.archivesName}" }
 	}
+	from(sourceSets.client.output.classesDirs) {
+		into "hasjamon/block4block/mixin/client"
+	}
 }
 
 // --- Task to Download Remote Config and Generate Resource Files ---
@@ -95,28 +102,13 @@ tasks.register('downloadAndFillResourceFiles') {
 
 		// URL of the remote config file on GitHub
 		def configUrl = 'https://raw.githubusercontent.com/Block4Block/Block4Block/master/src/main/resources/config.yml'
-		def remoteYaml = new org.yaml.snakeyaml.Yaml()
-		def remoteConfig = remoteYaml.load(new URL(configUrl).openStream())
 
-		// Configure DumperOptions for pretty YAML output
-		def options = new DumperOptions()
-		options.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK)
-		options.setPrettyFlow(true)
-		def yamlDumper = new org.yaml.snakeyaml.Yaml(options)
+		try {
+			// Download and parse the remote YAML
+			def remoteYaml = new org.yaml.snakeyaml.Yaml()
+			def remoteConfig = remoteYaml.load(new URL(configUrl).openStream())
 
-		// Use the src/main/resources directory for generated resource files
-		def resourcesDir = file('src/main/resources')
-		resourcesDir.mkdirs()
-
-		// Step 1: Generate config.yml using the display settings from the remote config (or defaults)
-		def configFile = new File(resourcesDir, 'config.yml')
-		if (remoteConfig?.display) {
-			configFile.withWriter('UTF-8') { writer ->
-				yamlDumper.dump([display: remoteConfig.display], writer)
-			}
-			println "Generated config.yml in resources from remote config."
-		} else {
-			// If remote config doesn't have display settings, use defaults
+			// Default config if remote config doesn't have display settings
 			def defaultDisplay = [
 					'useAdvancedTooltip': true,
 					'useLore': false,
@@ -124,38 +116,24 @@ tasks.register('downloadAndFillResourceFiles') {
 					'freeToBreakText': "§aFree to Break",
 					'freeInClaimsText': "§bFree in Claims"
 			]
-			configFile.withWriter('UTF-8') { writer ->
-				yamlDumper.dump([display: defaultDisplay], writer)
-			}
-			println "Generated default config.yml in resources."
-		}
 
-		// Helper closure to process block IDs
-		def processBlockList = { list ->
-			list.collect { String id ->
-				def processed = id.toLowerCase()
-				if (!processed.contains(':')) {
-					processed = "minecraft:" + processed
-				}
-				return processed
-			}
-		}
+			// Use the default config if no display is found in the remote config
+			def displayConfig = remoteConfig?.display ?: defaultDisplay
+			def config = [display: displayConfig]
 
-		// Step 2: Generate block_lists.yml using processed block list entries from the remote config
-		def rawClaimBlocks = remoteConfig?.get('blacklisted-claim-blocks') ?: []
-		def rawBreakBlocks = remoteConfig?.get('blacklisted-blocks') ?: []
-		def blockLists = [
-				'blacklisted-claim-blocks': processBlockList(rawClaimBlocks),
-				'blacklisted-blocks': processBlockList(rawBreakBlocks)
-		]
-		def blockListsFile = new File(resourcesDir, 'block_lists.yml')
-		blockListsFile.withWriter('UTF-8') { writer ->
-			yamlDumper.dump(blockLists, writer)
+			// File path for the generated config.yml
+			def configFilePath = 'src/main/resources/config.yml'
+
+			// Call Java method to generate YAML
+			com.example.block4block.YamlHelper.generateConfigYaml(config, configFilePath)
+
+			println "Generated config.yml in resources from remote config."
+
+		} catch (Exception e) {
+			println "Error downloading or processing the remote config.yml: ${e.message}"
 		}
-		println "Generated block_lists.yml in resources from remote config."
 	}
 }
-
 
 // Ensure the resource files are generated before processing resources and creating the source JAR.
 processResources.dependsOn downloadAndFillResourceFiles
