@@ -203,6 +203,8 @@ blacklisted-claim-blocks:
 - minecraft:gold_block
 - minecraft:diamond_block
 - minecraft:emerald_block
+- minecraft:hay_block
+- minecraft:lapis_block
 - minecraft:enchanting_table
 - minecraft:netherite_block
 - minecraft:zombie_head
