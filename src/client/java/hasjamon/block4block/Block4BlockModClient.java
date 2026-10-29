@@ -81,6 +81,10 @@ public class Block4BlockModClient implements ClientModInitializer {
 			if (!(item instanceof BlockItem)) {
 				return;
 			}
+			// A server running Block4Block with server-side tooltips already put the line on the item: do not add a second.
+			if (serverAlreadyLabelled(list)) {
+				return;
+			}
 			Block block = ((BlockItem) item).getBlock();
 			Identifier id = Registries.BLOCK.getId(block);
 
@@ -92,6 +96,23 @@ public class Block4BlockModClient implements ClientModInitializer {
 				addTooltip(list, blockForBlockText);
 			}
 		});
+	}
+
+	/** True if the tooltip already shows one of our three lines (sent by the server as lore). */
+	private boolean serverAlreadyLabelled(List<Text> tooltipList) {
+		for (Text line : tooltipList) {
+			String plain = line.getString().trim();
+			if (plain.equalsIgnoreCase(stripFormatting(blockForBlockText))
+					|| plain.equalsIgnoreCase(stripFormatting(freeToBreakText))
+					|| plain.equalsIgnoreCase(stripFormatting(freeInClaimsText))) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static String stripFormatting(String text) {
+		return text.replaceAll("§.", "").trim();
 	}
 
 	private void addTooltip(List<Text> tooltipList, String tooltipText) {
